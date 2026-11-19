@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I love you Anisa &lt;3</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: rgb(15, 0, 0);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let width, height, centerX, centerY, scale;
+
+function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    centerX = width / 2;
+    centerY = height / 2;
+    scale = Math.min(width / 1900, height / 1000) * 20;
+    if (width < 768) {
+        scale = Math.min(width, height) / 42;
+    }
+}
+window.addEventListener("resize", resize);
+resize();
+
+// Konfigurasi Slow Motion
+const CFG = {
+    fps: 50,                  // Diturunkan dari 120 ke 50 agar lebih slow motion
+    yOffsetRatio: -45 / 1000,
+
+    nOutline: 160,
+    nFill: 130,
+    nFloating: 1000,
+
+    outlineGap: 32,
+    fillGap: 42,
+
+    framesPerStep: 0.9,       // Jeda antar titik outline lebih pelan
+    fillDelayOffset: 25,      // Jeda sebelum isi hati muncul
+    centerDelay: 65,          // Jeda sebelum tulisan tengah muncul
+    fadeSpeedMin: 10,         // Fade-in lebih halus/pelan
+    fadeSpeedRand: 5,
+
+    heartWords: ["i love you anisa", "I LOVE YOU ANISA", "love you anisa"],
+    centerText: "I Love You Anisa",
+    floatWords: ["love", "♥", "anisa", "❤"],
+
+    colors: [
+        [255, 20, 20],
+        [220, 20, 60],
+        [255, 0, 0],
+        [178, 34, 34],
+        [255, 60, 60]
+    ]
+};
+
+function randChoice(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randRange(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function heartParametric(t) {
+    const x = 16.0 * Math.pow(Math.sin(t), 3);
+    const y = 13.0 * Math.cos(t) - 5.0 * Math.cos(2 * t) - 2.0 * Math.cos(3 * t) - Math.cos(4 * t);
+    return { x, y: -y };
+}
+
+function heartToRefScreen(hx, hy) {
+    return {
+        x: hx * 20 + 950,
+        y: hy * 20 + 500 - 45
+    };
+}
+
+function heartToScreen(hx, hy) {
+    return {
+        x: hx * scale + centerX,
+        y: hy * scale + centerY + (height * CFG.yOffsetRatio)
+    };
+}
+
+function tooClose(sx, sy, placed, gap) {
+    return placed.some(p => Math.hypot(sx - p.x, sy - p.y) < gap);
+}
+
+// 1. Generate Outline
+const outline = [];
+const placedOutline = [];
+for (let i = 0; i < CFG.nOutline; i++) {
+    const t = (i / CFG.nOutline) * Math.PI * 2;
+    const h = heartParametric(t);
+    const ref = heartToRefScreen(h.x, h.y);
+    if (tooClose(ref.x, ref.y, placedOutline, CFG.outlineGap)) continue;
+    placedOutline.push(ref);
+    outline.push({
+        hx: h.x,
+        hy: h.y,
+        order: i,
+        kind: "outline",
+        word: randChoice(CFG.heartWords),
+        color: randChoice(CFG.colors),
+        alpha: 0,
+        flicker: randRange(0, Math.PI * 2),
+        delay: Math.floor(i * CFG.framesPerStep),
+        sizeMult: randRange(0.85, 1.15)
+    });
+}
+
+const outlineSpan = outline.length > 0 ? Math.max(...outline.map(p => p.order)) : 0;
+const fillStart = Math.floor(outlineSpan * CFG.framesPerStep) + CFG.fillDelayOffset;
+const centerStart = fillStart + CFG.centerDelay;
+
+// 2. Generate Fill
+const fill = [];
+const placedFill = [];
+const maxAttempts = CFG.nFill * 80;
+for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (fill.length >= CFG.nFill) break;
+    const t = randRange(0, Math.PI * 2);
+    const r = randRange(0.0, 0.86);
+    const h = heartParametric(t);
+    const ref = heartToRefScreen(h.x * r, h.y * r);
+    if (tooClose(ref.x, ref.y, placedFill, CFG.fillGap)) continue;
+    placedFill.push(ref);
+    const order = randInt(0, 90);
+    fill.push({
+        hx: h.x * r,
+        hy: h.y * r,
+        order: order,
+        kind: "fill",
+        word: randChoice(CFG.heartWords),
+        color: randChoice(CFG.colors),
+        alpha: 0,
+        flicker: randRange(0, Math.PI * 2),
+        delay: fillStart + order,
+        sizeMult: randRange(0.85, 1.15)
+    });
+}
+
+const heartParticles = [...outline, ...fill];
+
+// 3. Floating Particles
+class FloatingParticle {
+    constructor() {
+        this.randomize(true);
+    }
+    randomize(scatterY = false) {
+        this.x = randRange(50, Math.max(100, width - 50));
+        this.y = scatterY ? randRange(0, height) : height + randRange(20, 100);
+        this.word = randChoice(CFG.floatWords);
+        this.color = randChoice(CFG.colors);
+        this.size = randInt(10, 18);
+        this.alpha = 0;
+        this.maxAlpha = randInt(40, 120);
+        this.vx = randRange(-0.25, 0.25);
+        this.vy = randRange(-0.3, -0.9);
+        this.swaySpeed = randRange(0.01, 0.03);
+        this.swayAmount = randRange(0.3, 0.9);
+        this.phase = randRange(0, Math.PI * 2);
+        this.fadingIn = true;
+        this.life = 0;
+        this.maxLife = randInt(300, 700);
+    }
+    update(frame) {
+        this.life += 1;
+        this.x += this.vx + Math.sin(frame * this.swaySpeed + this.phase) * this.swayAmount;
+        this.y += this.vy;
+
+        if (this.fadingIn) {
+            this.alpha = Math.min(this.maxAlpha, this.alpha + 2);
+            if (this.alpha >= this.maxAlpha) {
+                this.fadingIn = false;
+            }
+        }
+        if (this.life > this.maxLife - 60) {
+            this.alpha = Math.max(0, this.alpha - 2);
+        }
+
+        const offScreen = this.y < -50 || this.x < -50 || this.x > width + 50;
+        if (offScreen || (this.alpha <= 0 && this.life > 60)) {
+            this.randomize(false);
+        }
+    }
+}
+
+const floating = Array.from({ length: CFG.nFloating }, () => new FloatingParticle());
+
+let frame = 0;
+const stepMs = 1000 / CFG.fps;
+let lastTime = performance.now();
+let accumulator = 0;
+
+function updateLogic() {
+    frame += 1;
+
+    for (let i = 0; i < floating.length; i++) {
+        floating[i].update(frame);
+    }
+
+    for (let i = 0; i < heartParticles.length; i++) {
+        const p = heartParticles[i];
+        if (frame > p.delay && p.alpha < 255) {
+            p.alpha = Math.min(255, p.alpha + CFG.fadeSpeedMin + randInt(0, CFG.fadeSpeedRand));
+        }
+    }
+}
+
+function render() {
+    ctx.fillStyle = "rgb(15, 0, 0)";
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let i = 0; i < floating.length; i++) {
+        const fp = floating[i];
+        if (fp.alpha > 0) {
+            const [r, g, b] = fp.color;
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${fp.alpha / 255})`;
+            ctx.font = `${fp.size}px Arial, sans-serif`;
+            ctx.fillText(fp.word, fp.x, fp.y);
+        }
+    }
+
+    const scaleRatio = scale / 20;
+    for (let i = 0; i < heartParticles.length; i++) {
+        const p = heartParticles[i];
+        const flicker = p.alpha >= 255 ? 0.75 + 0.25 * Math.sin(frame * 0.04 + p.flicker) : 1.0;
+        const alpha = Math.floor(p.alpha * flicker);
+
+        if (alpha > 0) {
+            const pos = heartToScreen(p.hx, p.hy);
+            const [r, g, b] = p.color;
+            const normAlpha = alpha / 255;
+            const baseSize = p.kind === "outline" ? 20 : 17;
+            const fontSize = Math.max(8, Math.round(baseSize * p.sizeMult * scaleRatio));
+
+            ctx.save();
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+
+            if (alpha > 10) {
+                ctx.shadowColor = `rgba(${r}, ${g}, ${b}, ${Math.min(1, normAlpha * 0.85)})`;
+                ctx.shadowBlur = 18 * scaleRatio;
+            }
+
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${normAlpha})`;
+            ctx.fillText(p.word, pos.x, pos.y);
+            ctx.restore();
+        }
+    }
+
+    if (frame > centerStart) {
+        const progress = Math.min(1.0, (frame - centerStart) / 60.0); // Fade-in teks tengah lebih lembut
+        const centerAlpha = Math.floor(255 * (1 - Math.exp(-progress * 6)));
+        const pulse = 1.0 + 0.025 * Math.sin(frame * 0.05);
+        const normAlpha = centerAlpha / 255;
+        const centerFontSize = Math.max(18, Math.round(54 * scaleRatio * pulse));
+
+        const cy = centerY + (height * CFG.yOffsetRatio);
+
+        ctx.save();
+        ctx.font = `bold ${centerFontSize}px Georgia, serif`;
+
+        if (centerAlpha > 10) {
+            ctx.shadowColor = `rgba(255, 60, 60, ${normAlpha * 0.7})`;
+            ctx.shadowBlur = 24 * scaleRatio;
+        }
+
+        ctx.fillStyle = `rgba(255, 200, 200, ${normAlpha})`;
+        ctx.fillText(CFG.centerText, centerX, cy);
+        ctx.restore();
+    }
+}
+
+function loop(now) {
+    const dt = Math.min(now - lastTime, 100);
+    lastTime = now;
+    accumulator += dt;
+
+    while (accumulator >= stepMs) {
+        updateLogic();
+        accumulator -= stepMs;
+    }
+
+    render();
+    requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
